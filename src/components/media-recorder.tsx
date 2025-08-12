@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -600,8 +602,23 @@ export default function MediaRecorder() {
                         <Brain className="h-4 w-4" />
                         <span className="text-sm font-medium">AI Analysis</span>
                       </div>
-                      <div className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
-                        {recording.analysis}
+                      <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none">
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            h1: ({children}) => <h1 className="text-lg font-bold text-foreground mb-3">{children}</h1>,
+                            h2: ({children}) => <h2 className="text-base font-semibold text-foreground mb-2">{children}</h2>,
+                            h3: ({children}) => <h3 className="text-sm font-medium text-foreground mb-2">{children}</h3>,
+                            strong: ({children}) => <strong className="font-semibold text-foreground">{children}</strong>,
+                            p: ({children}) => <p className="text-sm text-muted-foreground mb-2 leading-relaxed">{children}</p>,
+                            ul: ({children}) => <ul className="text-sm text-muted-foreground ml-4 mb-2 space-y-1">{children}</ul>,
+                            li: ({children}) => <li className="list-disc">{children}</li>,
+                            code: ({children}) => <code className="bg-muted px-1 py-0.5 rounded text-xs font-mono">{children}</code>,
+                            blockquote: ({children}) => <blockquote className="border-l-2 border-muted pl-3 italic text-muted-foreground">{children}</blockquote>
+                          }}
+                        >
+                          {recording.analysis}
+                        </ReactMarkdown>
                       </div>
                     </div>
                   )}
@@ -666,9 +683,25 @@ export default function MediaRecorder() {
                   <Target className="h-4 w-4" />
                   AI Coaching Analysis
                 </h4>
-                <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-lg max-h-40 overflow-y-auto">
-                  {selectedRecordingForSidebar.analysis.split('\n').slice(0, 10).join('\n')}
-                  {selectedRecordingForSidebar.analysis.split('\n').length > 10 && '...'}
+                <div className="text-xs bg-muted/50 p-3 rounded-lg max-h-40 overflow-y-auto">
+                  <div className="prose prose-xs prose-neutral dark:prose-invert max-w-none">
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        h1: ({children}) => <h1 className="text-xs font-bold text-foreground mb-1">{children}</h1>,
+                        h2: ({children}) => <h2 className="text-xs font-semibold text-foreground mb-1">{children}</h2>,
+                        h3: ({children}) => <h3 className="text-xs font-medium text-foreground mb-1">{children}</h3>,
+                        strong: ({children}) => <strong className="font-semibold text-foreground">{children}</strong>,
+                        p: ({children}) => <p className="text-xs text-muted-foreground mb-1 leading-relaxed">{children}</p>,
+                        ul: ({children}) => <ul className="text-xs text-muted-foreground ml-2 mb-1">{children}</ul>,
+                        li: ({children}) => <li className="list-disc">{children}</li>,
+                        code: ({children}) => <code className="bg-muted px-1 py-0.5 rounded text-xs font-mono">{children}</code>
+                      }}
+                    >
+                      {selectedRecordingForSidebar.analysis.split('\n').slice(0, 15).join('\n') +
+                       (selectedRecordingForSidebar.analysis.split('\n').length > 15 ? '\n\n**[Click to view full analysis in main panel]**' : '')}
+                    </ReactMarkdown>
+                  </div>
                 </div>
               </div>
             )}
