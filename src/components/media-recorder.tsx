@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -13,32 +13,45 @@ import {
   Download,
   Camera,
   Brain,
-  Loader2
+  Loader2,
+  Maximize2,
+  Minimize2,
+  Trash2
 } from 'lucide-react'
+import { videoStorage, type StoredRecording } from '@/lib/video-storage'
 
 type RecordingType = 'video' | 'audio'
 
-interface Recording {
-  blob: Blob
-  url: string
-  type: RecordingType
-  duration: number
-  timestamp: Date
-  analysis?: string
-}
-
 export default function MediaRecorder() {
   const [isRecording, setIsRecording] = useState(false)
-  const [recordings, setRecordings] = useState<Recording[]>([])
+  const [recordings, setRecordings] = useState<StoredRecording[]>([])
   const [recordingType, setRecordingType] = useState<RecordingType>('video')
   const [recordingTime, setRecordingTime] = useState(0)
   const [hasPermission, setHasPermission] = useState<boolean | null>(null)
-  const [analyzingIndex, setAnalyzingIndex] = useState<number | null>(null)
+  const [analyzingId, setAnalyzingId] = useState<string | null>(null)
+  const [expandedVideoId, setExpandedVideoId] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
   
   const mediaRecorderRef = useRef<any>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const videoPreviewRef = useRef<HTMLVideoElement>(null)
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Load existing recordings on component mount
+  useEffect(() => {
+    loadRecordings()
+  }, [])
+
+  const loadRecordings = async () => {
+    try {
+      const storedRecordings = await videoStorage.getAllRecordings()
+      setRecordings(storedRecordings)
+    } catch (error) {
+      console.error('Error loading recordings:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   const requestPermissions = async () => {
     try {
@@ -68,7 +81,6 @@ export default function MediaRecorder() {
 
       streamRef.current = stream
       
-      // Check if MediaRecorder is available
       if (typeof window !== 'undefined' && 'MediaRecorder' in window) {
         const MediaRecorderClass = (window as any).MediaRecorder
         const mediaRecorder = new MediaRecorderClass(stream)
@@ -82,13 +94,13 @@ export default function MediaRecorder() {
           }
         }
 
-        mediaRecorder.onstop = () => {
+        mediaRecorder.onstop = async () => {
           const blob = new Blob(chunks, { 
             type: recordingType === 'video' ? 'video/webm' : 'audio/webm'
           })
           const url = URL.createObjectURL(blob)
           
-          const newRecording: Recording = {
+          const newRecording = {
             blob,
             url,
             type: recordingType,
@@ -96,8 +108,17 @@ export default function MediaRecorder() {
             timestamp: new Date()
           }
           
-          setRecordings(prev => [...prev, newRecording])
-          setRecordingTime(0)
+          try {
+            // Save to IndexedDB
+            const id = await videoStorage.saveRecording(newRecording)
+            const storedRecording = { ...newRecording, id }
+            
+            // Update local state
+            setRecordings(prev => [storedRecording, ...prev])
+            setRecordingTime(0)
+          } catch (error) {
+            console.error('Error saving recording:', error)
+          }
           
           if (intervalRef.current) {
             clearInterval(intervalRef.current)
@@ -107,7 +128,6 @@ export default function MediaRecorder() {
         mediaRecorder.start()
         setIsRecording(true)
         
-        // Start recording timer
         intervalRef.current = setInterval(() => {
           setRecordingTime(prev => prev + 1)
         }, 1000)
@@ -138,13 +158,32 @@ export default function MediaRecorder() {
     }
   }
 
-  const downloadRecording = (recording: Recording) => {
+  const downloadRecording = (recording: StoredRecording) => {
     const a = document.createElement('a')
     a.href = recording.url
-    a.download = `recording-${recording.timestamp.getTime()}.${recording.type === 'video' ? 'webm' : 'webm'}`
+    a.download = `eloquence-${recording.type}-${recording.timestamp.getTime()}.webm`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
+  }
+
+  const deleteRecording = async (recording: StoredRecording) => {
+    if (!confirm('Are you sure you want to delete this recording?')) return
+    
+    try {
+      await videoStorage.deleteRecording(recording.id)
+      setRecordings(prev => prev.filter(r => r.id !== recording.id))
+      
+      // Clean up blob URL
+      URL.revokeObjectURL(recording.url)
+      
+      // Close expanded view if this recording was expanded
+      if (expandedVideoId === recording.id) {
+        setExpandedVideoId(null)
+      }
+    } catch (error) {
+      console.error('Error deleting recording:', error)
+    }
   }
 
   const convertBlobToBase64 = (blob: Blob): Promise<string> => {
@@ -152,7 +191,6 @@ export default function MediaRecorder() {
       const reader = new FileReader()
       reader.onloadend = () => {
         if (typeof reader.result === 'string') {
-          // Remove data URL prefix to get just the base64 data
           const base64 = reader.result.split(',')[1]
           resolve(base64)
         } else {
@@ -164,13 +202,13 @@ export default function MediaRecorder() {
     })
   }
 
-  const analyzeVideo = async (recording: Recording, index: number) => {
+  const analyzeVideo = async (recording: StoredRecording) => {
     if (recording.type !== 'video') {
       alert('Video analysis is only available for video recordings')
       return
     }
 
-    setAnalyzingIndex(index)
+    setAnalyzingId(recording.id)
 
     try {
       const base64Data = await convertBlobToBase64(recording.blob)
@@ -190,9 +228,12 @@ export default function MediaRecorder() {
       const result = await response.json()
 
       if (result.success) {
-        // Update the recording with analysis
-        setRecordings(prev => prev.map((rec, i) => 
-          i === index ? { ...rec, analysis: result.analysis } : rec
+        // Update in IndexedDB
+        await videoStorage.updateRecording(recording.id, { analysis: result.analysis })
+        
+        // Update local state
+        setRecordings(prev => prev.map(rec => 
+          rec.id === recording.id ? { ...rec, analysis: result.analysis } : rec
         ))
       } else {
         console.error('Analysis failed:', result.error)
@@ -202,14 +243,29 @@ export default function MediaRecorder() {
       console.error('Error analyzing video:', error)
       alert('Failed to analyze video. Please try again.')
     } finally {
-      setAnalyzingIndex(null)
+      setAnalyzingId(null)
     }
+  }
+
+  const toggleVideoExpanded = (recordingId: string) => {
+    setExpandedVideoId(prev => prev === recordingId ? null : recordingId)
   }
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60)
     const secs = seconds % 60
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+  }
+
+  if (isLoading) {
+    return (
+      <div className="max-w-4xl mx-auto p-6 flex items-center justify-center min-h-[400px]">
+        <div className="flex items-center gap-2">
+          <Loader2 className="h-6 w-6 animate-spin" />
+          <span>Loading your recordings...</span>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -329,11 +385,11 @@ export default function MediaRecorder() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {recordings.map((recording, index) => (
-                <div key={index} className="space-y-4">
-                  <div className="flex items-center justify-between p-4 border rounded-lg">
-                    <div className="flex items-center gap-4">
+            <div className="space-y-6">
+              {recordings.map((recording) => (
+                <div key={recording.id} className="space-y-4">
+                  <div className="flex items-start justify-between p-4 border rounded-lg">
+                    <div className="flex items-start gap-4">
                       <Badge variant={recording.type === 'video' ? 'default' : 'secondary'}>
                         {recording.type === 'video' ? (
                           <Video className="h-3 w-3 mr-1" />
@@ -352,14 +408,18 @@ export default function MediaRecorder() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      {recording.type === 'video' ? (
-                        <video
-                          src={recording.url}
-                          controls
-                          className="w-24 h-14 rounded object-cover"
-                        />
-                      ) : (
-                        <audio src={recording.url} controls className="h-8" />
+                      {recording.type === 'video' && (
+                        <Button
+                          onClick={() => toggleVideoExpanded(recording.id)}
+                          size="sm"
+                          variant="outline"
+                        >
+                          {expandedVideoId === recording.id ? (
+                            <Minimize2 className="h-4 w-4" />
+                          ) : (
+                            <Maximize2 className="h-4 w-4" />
+                          )}
+                        </Button>
                       )}
                       <Button
                         onClick={() => downloadRecording(recording)}
@@ -370,19 +430,45 @@ export default function MediaRecorder() {
                       </Button>
                       {recording.type === 'video' && (
                         <Button
-                          onClick={() => analyzeVideo(recording, index)}
+                          onClick={() => analyzeVideo(recording)}
                           size="sm"
                           variant="secondary"
-                          disabled={analyzingIndex === index}
+                          disabled={analyzingId === recording.id}
                         >
-                          {analyzingIndex === index ? (
+                          {analyzingId === recording.id ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
                           ) : (
                             <Brain className="h-4 w-4" />
                           )}
                         </Button>
                       )}
+                      <Button
+                        onClick={() => deleteRecording(recording)}
+                        size="sm"
+                        variant="outline"
+                        className="text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
+                  </div>
+
+                  {/* Enhanced Video/Audio Player */}
+                  <div className={`${expandedVideoId === recording.id ? 'block' : 'flex justify-center'}`}>
+                    {recording.type === 'video' ? (
+                      <video
+                        src={recording.url}
+                        controls
+                        className={expandedVideoId === recording.id 
+                          ? "w-full aspect-video rounded-lg" 
+                          : "w-48 h-32 rounded object-cover"
+                        }
+                      />
+                    ) : (
+                      <div className="w-full max-w-md">
+                        <audio src={recording.url} controls className="w-full" />
+                      </div>
+                    )}
                   </div>
                   
                   {/* Analysis Results */}
@@ -400,6 +486,19 @@ export default function MediaRecorder() {
                 </div>
               ))}
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Empty State */}
+      {recordings.length === 0 && (
+        <Card>
+          <CardContent className="text-center py-12">
+            <Camera className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+            <h3 className="text-lg font-medium mb-2">No recordings yet</h3>
+            <p className="text-muted-foreground mb-4">
+              Start by recording your first video or audio clip
+            </p>
           </CardContent>
         </Card>
       )}
