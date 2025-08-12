@@ -23,17 +23,46 @@ export async function POST(request: NextRequest) {
     // Initialize the Gemini AI client
     const genAI = new GoogleGenAI({ apiKey })
 
-    // Enhanced analysis prompt
-    const defaultPrompt = `Analyze this video recording in detail and provide a comprehensive summary. Please include:
+    // Presentation coaching analysis prompt
+    const defaultPrompt = `You are an expert presentation coach analyzing this speaking presentation video. Provide detailed feedback as follows:
 
-1. **Visual Content**: Describe what you see - people, objects, scenes, environment
-2. **Actions & Movement**: What activities or movements are taking place?
-3. **Audio Context**: Any speech, sounds, or audio elements you can identify
-4. **Setting & Context**: Where does this appear to be taking place?
-5. **Key Moments**: Highlight any significant events or changes in the video
-6. **Overall Summary**: Provide a concise overview of the video's main content
+**OVERALL PRESENTATION EVALUATION:**
+Rate the presentation on a scale of 1-10 and provide overall assessment.
 
-Please be thorough but concise in your analysis.`
+**DELIVERY ANALYSIS:**
+- Voice clarity, pace, and volume
+- Body language and posture
+- Eye contact and engagement
+- Confidence level and presence
+- Use of gestures and movement
+
+**CONTENT STRUCTURE:**
+- Opening effectiveness
+- Main points clarity
+- Logical flow and transitions
+- Conclusion strength
+- Key messages delivery
+
+**AREAS FOR IMPROVEMENT:**
+Provide specific, actionable feedback with approximate timestamps (estimate based on video segments):
+
+[Timestamp: 0:XX] - Specific issue observed
+**Improvement:** Concrete suggestion for better delivery
+**Better phrasing:** "Instead of saying X, try saying Y more concisely"
+
+**SENTENCE-BY-SENTENCE COACHING:**
+For unclear or wordy statements, provide:
+- Original statement (approximate time)
+- Improved, more concise version
+- Reason for the change
+
+**ACTION PLAN:**
+3-5 specific steps the presenter should practice for their next presentation.
+
+**STRENGTHS TO BUILD ON:**
+Highlight what the presenter did well and should continue doing.
+
+Be specific, actionable, and constructive in your coaching feedback.`
 
     // Prepare the content for Gemini
     const contents = [

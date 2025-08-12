@@ -17,7 +17,12 @@ import {
   Maximize2,
   Minimize2,
   Trash2,
-  Settings
+  Settings,
+  ChevronRight,
+  ChevronLeft,
+  MessageSquare,
+  Clock,
+  Target
 } from 'lucide-react'
 import { videoStorage, type StoredRecording } from '@/lib/video-storage'
 
@@ -34,6 +39,9 @@ export default function MediaRecorder() {
   const [isLoading, setIsLoading] = useState(true)
   const [showCustomPrompt, setShowCustomPrompt] = useState<string | null>(null)
   const [customPrompt, setCustomPrompt] = useState('')
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [selectedRecordingForSidebar, setSelectedRecordingForSidebar] = useState<StoredRecording | null>(null)
+  const [userNotes, setUserNotes] = useState('')
   
   const mediaRecorderRef = useRef<any>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -272,6 +280,44 @@ export default function MediaRecorder() {
     setCustomPrompt('')
   }
 
+  const openSidebar = (recording: StoredRecording) => {
+    setSelectedRecordingForSidebar(recording)
+    setSidebarOpen(true)
+  }
+
+  const closeSidebar = () => {
+    setSidebarOpen(false)
+    setSelectedRecordingForSidebar(null)
+    setUserNotes('')
+  }
+
+  const saveUserNotes = async () => {
+    if (!selectedRecordingForSidebar || !userNotes.trim()) return
+    
+    try {
+      const currentAnalysis = selectedRecordingForSidebar.analysis || ''
+      const updatedAnalysis = `${currentAnalysis}\n\n**USER NOTES & IMPROVEMENTS:**\n${userNotes}`
+      
+      await videoStorage.updateRecording(selectedRecordingForSidebar.id, {
+        analysis: updatedAnalysis
+      })
+      
+      // Update local state
+      setRecordings(prev => prev.map(rec =>
+        rec.id === selectedRecordingForSidebar.id ? {
+          ...rec,
+          analysis: updatedAnalysis
+        } : rec
+      ))
+      
+      setUserNotes('')
+      alert('Notes saved successfully!')
+    } catch (error) {
+      console.error('Error saving notes:', error)
+      alert('Failed to save notes. Please try again.')
+    }
+  }
+
   const toggleVideoExpanded = (recordingId: string) => {
     setExpandedVideoId(prev => prev === recordingId ? null : recordingId)
   }
@@ -294,14 +340,16 @@ export default function MediaRecorder() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-6 space-y-6">
+    <div className={`flex ${sidebarOpen ? 'mr-96' : ''} transition-all duration-300`}>
+      <div className="flex-1 max-w-4xl mx-auto p-6 space-y-6">
       {/* Header */}
-      <div className="text-center space-y-4">
-        <h1 className="text-4xl font-bold tracking-tight">Eloquence</h1>
-        <p className="text-muted-foreground text-lg">
-          Record high-quality video and audio with AI-powered analysis
-        </p>
-      </div>
+        {/* Header */}
+        <div className="text-center space-y-4">
+          <h1 className="text-4xl font-bold tracking-tight">Eloquence</h1>
+          <p className="text-muted-foreground text-lg">
+            AI-Powered Presentation Coach - Record, Analyze, and Improve Your Speaking
+          </p>
+        </div>
 
       {/* Recording Controls */}
       <Card>
@@ -475,6 +523,13 @@ export default function MediaRecorder() {
                           >
                             <Settings className="h-4 w-4" />
                           </Button>
+                          <Button
+                            onClick={() => openSidebar(recording)}
+                            size="sm"
+                            variant="secondary"
+                          >
+                            <MessageSquare className="h-4 w-4" />
+                          </Button>
                         </>
                       )}
                       <Button
@@ -562,12 +617,98 @@ export default function MediaRecorder() {
         <Card>
           <CardContent className="text-center py-12">
             <Camera className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-            <h3 className="text-lg font-medium mb-2">No recordings yet</h3>
+            <h3 className="text-lg font-medium mb-2">No presentation recordings yet</h3>
             <p className="text-muted-foreground mb-4">
-              Start by recording your first video or audio clip
+              Record your first presentation to get AI-powered coaching feedback
             </p>
           </CardContent>
         </Card>
+      )}
+      </div>
+
+      {/* Coaching Sidebar */}
+      {sidebarOpen && selectedRecordingForSidebar && (
+        <div className="fixed right-0 top-0 bottom-0 w-96 bg-background border-l shadow-lg z-50 overflow-y-auto">
+          <div className="p-6 space-y-4">
+            {/* Sidebar Header */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="h-5 w-5" />
+                <h3 className="font-semibold">Presentation Coach</h3>
+              </div>
+              <Button
+                onClick={closeSidebar}
+                size="sm"
+                variant="ghost"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+
+            {/* Recording Info */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Clock className="h-4 w-4" />
+                <span>{formatTime(selectedRecordingForSidebar.duration)} • {selectedRecordingForSidebar.timestamp.toLocaleString()}</span>
+              </div>
+              <Badge variant="default">
+                <Video className="h-3 w-3 mr-1" />
+                Presentation Video
+              </Badge>
+            </div>
+
+            <Separator />
+
+            {/* Quick Analysis Summary */}
+            {selectedRecordingForSidebar.analysis && (
+              <div className="space-y-2">
+                <h4 className="font-medium flex items-center gap-2">
+                  <Target className="h-4 w-4" />
+                  AI Coaching Analysis
+                </h4>
+                <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-lg max-h-40 overflow-y-auto">
+                  {selectedRecordingForSidebar.analysis.split('\n').slice(0, 10).join('\n')}
+                  {selectedRecordingForSidebar.analysis.split('\n').length > 10 && '...'}
+                </div>
+              </div>
+            )}
+
+            <Separator />
+
+            {/* User Notes Section */}
+            <div className="space-y-3">
+              <h4 className="font-medium">Your Improvement Notes</h4>
+              <div className="space-y-2">
+                <textarea
+                  value={userNotes}
+                  onChange={(e) => setUserNotes(e.target.value)}
+                  placeholder="Add your own notes about improvements to make:&#10;&#10;• Better opening hook needed&#10;• Practice transition to main points&#10;• Work on eye contact&#10;• Slow down speaking pace&#10;• Add more gestures for emphasis"
+                  className="w-full min-h-[120px] p-3 text-sm border rounded-md bg-background resize-none"
+                />
+                <Button
+                  onClick={saveUserNotes}
+                  size="sm"
+                  className="w-full"
+                  disabled={!userNotes.trim()}
+                >
+                  Save Notes
+                </Button>
+              </div>
+            </div>
+
+            {/* Quick Tips */}
+            <div className="space-y-2 pt-4">
+              <h4 className="font-medium text-sm">Quick Presentation Tips:</h4>
+              <div className="space-y-1 text-xs text-muted-foreground">
+                <p>• Start with a compelling hook</p>
+                <p>• Maintain eye contact with camera</p>
+                <p>• Pause between key points</p>
+                <p>• Use open, confident body language</p>
+                <p>• End with a clear call to action</p>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
