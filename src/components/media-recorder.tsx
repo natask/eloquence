@@ -16,7 +16,8 @@ import {
   Loader2,
   Maximize2,
   Minimize2,
-  Trash2
+  Trash2,
+  Settings
 } from 'lucide-react'
 import { videoStorage, type StoredRecording } from '@/lib/video-storage'
 
@@ -31,6 +32,8 @@ export default function MediaRecorder() {
   const [analyzingId, setAnalyzingId] = useState<string | null>(null)
   const [expandedVideoId, setExpandedVideoId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [showCustomPrompt, setShowCustomPrompt] = useState<string | null>(null)
+  const [customPrompt, setCustomPrompt] = useState('')
   
   const mediaRecorderRef = useRef<any>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -202,7 +205,7 @@ export default function MediaRecorder() {
     })
   }
 
-  const analyzeVideo = async (recording: StoredRecording) => {
+  const analyzeVideo = async (recording: StoredRecording, useCustomPrompt = false) => {
     if (recording.type !== 'video') {
       alert('Video analysis is only available for video recordings')
       return
@@ -213,6 +216,8 @@ export default function MediaRecorder() {
     try {
       const base64Data = await convertBlobToBase64(recording.blob)
       
+      const promptToUse = useCustomPrompt ? customPrompt : undefined
+      
       const response = await fetch('/api/analyze-video', {
         method: 'POST',
         headers: {
@@ -221,7 +226,7 @@ export default function MediaRecorder() {
         body: JSON.stringify({
           videoData: base64Data,
           mimeType: 'video/webm',
-          prompt: 'Please analyze this video and provide a detailed summary of what you observe. Include any actions, objects, people, or notable events in the video.'
+          prompt: promptToUse
         }),
       })
 
@@ -229,15 +234,25 @@ export default function MediaRecorder() {
 
       if (result.success) {
         // Update in IndexedDB
-        await videoStorage.updateRecording(recording.id, { analysis: result.analysis })
+        const analysisResult = `**Analysis Result:**\n\n${result.analysis}\n\n**Prompt Used:**\n${result.prompt_used}`
+        await videoStorage.updateRecording(recording.id, {
+          analysis: analysisResult
+        })
         
         // Update local state
-        setRecordings(prev => prev.map(rec => 
-          rec.id === recording.id ? { ...rec, analysis: result.analysis } : rec
+        setRecordings(prev => prev.map(rec =>
+          rec.id === recording.id ? {
+            ...rec,
+            analysis: analysisResult
+          } : rec
         ))
+        
+        // Close custom prompt if it was open
+        setShowCustomPrompt(null)
+        setCustomPrompt('')
       } else {
         console.error('Analysis failed:', result.error)
-        alert(`Analysis failed: ${result.error}`)
+        alert(`Analysis failed: ${result.error}\n\nDetails: ${result.details}`)
       }
     } catch (error) {
       console.error('Error analyzing video:', error)
@@ -245,6 +260,16 @@ export default function MediaRecorder() {
     } finally {
       setAnalyzingId(null)
     }
+  }
+
+  const openCustomPrompt = (recordingId: string) => {
+    setShowCustomPrompt(recordingId)
+    setCustomPrompt('')
+  }
+
+  const closeCustomPrompt = () => {
+    setShowCustomPrompt(null)
+    setCustomPrompt('')
   }
 
   const toggleVideoExpanded = (recordingId: string) => {
@@ -429,18 +454,28 @@ export default function MediaRecorder() {
                         <Download className="h-4 w-4" />
                       </Button>
                       {recording.type === 'video' && (
-                        <Button
-                          onClick={() => analyzeVideo(recording)}
-                          size="sm"
-                          variant="secondary"
-                          disabled={analyzingId === recording.id}
-                        >
-                          {analyzingId === recording.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Brain className="h-4 w-4" />
-                          )}
-                        </Button>
+                        <>
+                          <Button
+                            onClick={() => analyzeVideo(recording)}
+                            size="sm"
+                            variant="secondary"
+                            disabled={analyzingId === recording.id}
+                          >
+                            {analyzingId === recording.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Brain className="h-4 w-4" />
+                            )}
+                          </Button>
+                          <Button
+                            onClick={() => openCustomPrompt(recording.id)}
+                            size="sm"
+                            variant="outline"
+                            disabled={analyzingId === recording.id}
+                          >
+                            <Settings className="h-4 w-4" />
+                          </Button>
+                        </>
                       )}
                       <Button
                         onClick={() => deleteRecording(recording)}
@@ -470,6 +505,38 @@ export default function MediaRecorder() {
                       </div>
                     )}
                   </div>
+
+                  {/* Custom Prompt Input */}
+                  {showCustomPrompt === recording.id && (
+                    <div className="ml-4 p-4 bg-muted/30 rounded-lg space-y-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Settings className="h-4 w-4" />
+                        <span className="text-sm font-medium">Custom Analysis Prompt</span>
+                      </div>
+                      <textarea
+                        value={customPrompt}
+                        onChange={(e) => setCustomPrompt(e.target.value)}
+                        placeholder="Enter your custom prompt for analyzing this video..."
+                        className="w-full min-h-[100px] p-3 text-sm border rounded-md bg-background"
+                      />
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={() => analyzeVideo(recording, true)}
+                          size="sm"
+                          disabled={!customPrompt.trim() || analyzingId === recording.id}
+                        >
+                          Analyze with Custom Prompt
+                        </Button>
+                        <Button
+                          onClick={closeCustomPrompt}
+                          size="sm"
+                          variant="outline"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                   
                   {/* Analysis Results */}
                   {recording.analysis && (
@@ -478,9 +545,9 @@ export default function MediaRecorder() {
                         <Brain className="h-4 w-4" />
                         <span className="text-sm font-medium">AI Analysis</span>
                       </div>
-                      <p className="text-sm text-muted-foreground leading-relaxed">
+                      <div className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
                         {recording.analysis}
-                      </p>
+                      </div>
                     </div>
                   )}
                 </div>
