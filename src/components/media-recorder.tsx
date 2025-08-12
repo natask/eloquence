@@ -21,7 +21,6 @@ import {
   Trash2,
   Settings,
   ChevronRight,
-  ChevronLeft,
   MessageSquare,
   Clock,
   Target
@@ -45,7 +44,7 @@ export default function MediaRecorder() {
   const [selectedRecordingForSidebar, setSelectedRecordingForSidebar] = useState<StoredRecording | null>(null)
   const [userNotes, setUserNotes] = useState('')
   
-  const mediaRecorderRef = useRef<any>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const videoPreviewRef = useRef<HTMLVideoElement>(null)
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
@@ -95,12 +94,13 @@ export default function MediaRecorder() {
       streamRef.current = stream
       
       if (typeof window !== 'undefined' && 'MediaRecorder' in window) {
-        const MediaRecorderClass = (window as any).MediaRecorder
-        const mediaRecorder = new MediaRecorderClass(stream)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const mediaRecorder = new (window as any).MediaRecorder(stream)
         mediaRecorderRef.current = mediaRecorder
 
         const chunks: Blob[] = []
         
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         mediaRecorder.ondataavailable = (event: any) => {
           if (event.data && event.data.size > 0) {
             chunks.push(event.data)
